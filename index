@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The FrontendBack · Notebook MVP</title>
+
+  <!-- Fonts & libs -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/jupyter.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+
+  <style>
+    :root {
+      --bg: #0f141b;
+      --panel: #121a23;
+      --panel-strong: #0a1016;
+      --border: #1f2a38;
+      --text: #dfe7f3;
+      --muted: #8fa1b7;
+      --accent: #2de4c1;
+      --accent-2: #26a1ff;
+      --warn: #ffb347;
+      --error: #ff6b6b;
+      --shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(120% 120% at 18% 18%, rgba(45, 228, 193, 0.1), transparent 55%),
+                  radial-gradient(100% 100% at 82% 12%, rgba(38, 161, 255, 0.12), transparent 50%),
+                  var(--bg);
+      color: var(--text);
+      font-family: "Space Grotesk", "Segoe UI", system-ui, -apple-system, sans-serif;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      height: 60px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(12, 18, 25, 0.94);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      letter-spacing: 0.5px;
+      font-weight: 700;
+    }
+    .tagline {
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .pill {
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.85rem;
+      background: #0c1219;
+    }
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #031019;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+      box-shadow: 0 8px 20px rgba(38, 161, 255, 0.3);
+    }
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); box-shadow: none; }
+
+    #workspace {
+      height: calc(100vh - 60px);
+      display: grid;
+      grid-template-columns: 240px 1fr 330px;
+      grid-template-rows: 65% 35%;
+      gap: 10px;
+      padding: 10px;
+    }
+    .panel {
+      background: linear-gradient(180deg, var(--panel), var(--panel-strong));
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* Explorer */
+    #files-panel { grid-row: 1 / 3; }
+    .file-list { list-style: none; margin: 0; padding: 6px 0; overflow-y: auto; flex: 1; }
+    .file-item {
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      cursor: pointer;
+      transition: background 120ms ease;
+    }
+    .file-item:hover { background: rgba(45, 228, 193, 0.08); }
+    .file-icon { opacity: 0.9; }
+    .storage-actions { padding: 10px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+    .storage-actions button { width: 100%; padding: 9px 12px; font-weight: 600; }
+    .storage-log { padding: 10px; font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--border); min-height: 60px; background: #0c1219; }
+
+    /* Notebook */
+    #notebook-panel { grid-row: 1; grid-column: 2; overflow: hidden; }
+    #notebook-scroll { padding: 12px; overflow-y: auto; flex: 1; }
+    .cell {
+      background: #0f131a;
+      border: 1px solid #1e2b3b;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+    }
+    .cell-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-bottom: 1px solid #1b2736;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .prompt {
+      color: #7bd4ff;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+    .cell-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .cell-actions button {
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      box-shadow: none;
+    }
+    .cm-wrapper { border-radius: 0 0 10px 10px; overflow: hidden; }
+    .CodeMirror { height: auto; min-height: 80px; font-size: 14px; }
+    .output {
+      padding: 10px 12px;
+      border-top: 1px solid #1b2736;
+      background: #0c1219;
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, Menlo, monospace;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+    .output pre { margin: 0; }
+    .output .err { color: var(--error); }
+
+    /* Terminal */
+    #terminal-panel { grid-row: 2; grid-column: 2; padding: 6px; }
+
+    /* AI */
+    #ai-panel { grid-row: 1 / 3; grid-column: 3; }
+    #ai-chat {
+      padding: 12px;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .msg {
+      max-width: 95%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 0.92rem;
+      line-height: 1.4;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .msg.ai { background: rgba(45, 228, 193, 0.08); color: var(--text); border: 1px solid var(--border); }
+    .msg.user { background: rgba(38, 161, 255, 0.16); color: var(--text); border: 1px solid #234463; align-self: flex-end; }
+    .ai-input-area { padding: 10px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-direction: column; }
+    .ai-row { display: flex; gap: 8px; }
+    .ai-input, select {
+      flex: 1;
+      background: #0d1219;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    textarea.ai-input { min-height: 80px; resize: vertical; }
+
+    /* Loader */
+    #loader {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      background: rgba(4, 8, 12, 0.92);
+      gap: 12px;
+      z-index: 9999;
+      color: var(--text);
+    }
+    .spinner {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      border: 4px solid rgba(45, 228, 193, 0.25);
+      border-top: 4px solid var(--accent);
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="loader">
+    <div class="spinner"></div>
+    <div>Booting The FrontendBack...</div>
+    <div id="loading-status" style="color: var(--muted); font-size: 0.9rem;">Preparing WASM runtime</div>
+  </div>
+
+  <header>
+    <div class="brand">
+      <span style="color: var(--accent)">THE</span>
+      <span style="color: #e6f2ff">FRONTENDBACK</span>
+      <span class="tagline">Notebook-flavored browser backend</span>
+    </div>
+    <div class="actions">
+      <div class="pill" id="kernel-status">Kernel: starting...</div>
+      <button onclick="addCell()">+ Code Cell</button>
+      <button onclick="runAll()">Run All ▸</button>
+    </div>
+  </header>
+
+  <div id="workspace">
+    <div id="files-panel" class="panel">
+      <div class="panel-header">Explorer & Storage</div>
+      <ul class="file-list" id="file-list"></ul>
+      <div class="storage-actions">
+        <button onclick="connectDrive()">Link Google Drive</button>
+        <button onclick="connectS3()">Link S3</button>
+        <button onclick="connectIpfs()">Link IPFS</button>
+      </div>
+      <div class="storage-log" id="storage-log">No remote storage linked yet.</div>
+    </div>
+
+    <div id="notebook-panel" class="panel">
+      <div class="panel-header">Notebook</div>
+      <div id="notebook-scroll"></div>
+    </div>
+
+    <div id="terminal-panel" class="panel"></div>
+
+    <div id="ai-panel" class="panel">
+      <div class="panel-header">AI Co-pilot (Gemini)</div>
+      <div id="ai-chat">
+        <div class="msg ai">Hi! Paste your Gemini API key, pick a model, and I will answer with notebook context.</div>
+      </div>
+      <div class="ai-input-area">
+        <div class="ai-row">
+          <input class="ai-input" id="gem-key" type="password" placeholder="GEMINI_API_KEY (stored locally)">
+          <button onclick="toggleStoreKey()">Save/Forget</button>
+        </div>
+        <div class="ai-row">
+          <select id="model-select">
+            <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+            <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+            <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+          </select>
+        </div>
+        <textarea class="ai-input" id="chat-input" rows="3" placeholder="Ask me anything..."></textarea>
+        <button onclick="sendChat()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Terminal setup
+    const term = new Terminal({
+      convertEol: true,
+      cursorBlink: true,
+      fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Consolas, Menlo, monospace",
+      fontSize: 14,
+      theme: { background: "#0b1017", foreground: "#dfe7f3", cursor: "#2de4c1" }
+    });
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById("terminal-panel"));
+    fitAddon.fit();
+    window.addEventListener("resize", () => fitAddon.fit());
+    term.writeln("\\x1b[38;5;50mWelcome to The FrontendBack terminal.\\x1b[0m");
+
+    // Notebook state
+    const notebook = [];
+    const notebookScroll = document.getElementById("notebook-scroll");
+    const fileListEl = document.getElementById("file-list");
+    const storageLog = document.getElementById("storage-log");
+    let pyodide;
+    let ready = false;
+    let currentOutputEl = null;
+
+    // Virtual files
+    const files = {
+      "main.py": "# Example helper loaded into FS\\n\\nimport math\\n\\ndef area(r):\\n    return math.pi * r * r\\n",
+      "data.json": '{ "message": "hello from The FrontendBack" }\\n',
+      "readme.txt": "This FS lives in-memory. Download to persist.\\n"
+    };
+
+    Object.keys(files).forEach((name) => {
+      const li = document.createElement("li");
+      li.className = "file-item";
+      li.innerHTML = '<span class="file-icon">📄</span>' + name;
+      li.onclick = () => loadFile(name);
+      fileListEl.appendChild(li);
+    });
+
+    function logStorage(msg) {
+      storageLog.textContent = msg;
+    }
+
+    function connectDrive() {
+      logStorage("Google Drive link requested. TODO: implement OAuth flow.");
+      alert("Stub: swap this with your Drive picker/OAuth flow.");
+    }
+    function connectS3() {
+      logStorage("S3 link requested. TODO: add credentials flow.");
+      alert("Stub: prompt for S3 creds and sign requests.");
+    }
+    function connectIpfs() {
+      logStorage("IPFS link requested. TODO: add gateway/client wiring.");
+      alert("Stub: connect to your IPFS gateway or js-ipfs node.");
+    }
+
+    // Pyodide boot
+    async function bootPy() {
+      try {
+        term.writeln("Loading Python WASM runtime...");
+        pyodide = await loadPyodide({
+          stdout: (t) => pipeOutput("out", t),
+          stderr: (t) => pipeOutput("err", t)
+        });
+        for (const [name, content] of Object.entries(files)) {
+          pyodide.FS.writeFile(name, content);
+        }
+        document.getElementById("loader").style.display = "none";
+        setKernelStatus("Kernel: ready (Pyodide 3.11)", "accent");
+        term.writeln("\\x1b[32mPython kernel ready. Add cells and run.\\x1b[0m");
+        ready = true;
+      } catch (err) {
+        setKernelStatus("Kernel failed", "error");
+        term.writeln("\\x1b[31m" + err + "\\x1b[0m");
+        document.getElementById("loading-status").innerText = err;
+      }
+    }
+    bootPy();
+
+    function setKernelStatus(text, tone = "muted") {
+      const el = document.getElementById("kernel-status");
+      const tones = { accent: "#2de4c1", warn: "#ffb347", error: "#ff6b6b", muted: "#8fa1b7" };
+      el.textContent = text;
+      el.style.color = tones[tone] || tones.muted;
+    }
+
+    function pipeOutput(type, text) {
+      term.writeln(text);
+      if (currentOutputEl) {
+        const pre = document.createElement("pre");
+        pre.className = type === "err" ? "err" : "";
+        pre.textContent = text;
+        currentOutputEl.appendChild(pre);
+      }
+    }
+
+    // Cells
+    function addCell(content = "# Cell code here\\nprint('hello from a cell')") {
+      const idx = notebook.length + 1;
+      const cell = document.createElement("div");
+      cell.className = "cell";
+
+      const header = document.createElement("div");
+      header.className = "cell-header";
+      const prompt = document.createElement("div");
+      prompt.className = "prompt";
+      prompt.textContent = `In [${idx}]:`;
+      const actions = document.createElement("div");
+      actions.className = "cell-actions";
+      const runBtn = document.createElement("button");
+      runBtn.textContent = "Run";
+      runBtn.onclick = () => runCell(idx - 1);
+      const delBtn = document.createElement("button");
+      delBtn.textContent = "Delete";
+      delBtn.onclick = () => deleteCell(idx - 1);
+      actions.append(runBtn, delBtn);
+      header.append(prompt, actions);
+
+      const editorWrap = document.createElement("div");
+      editorWrap.className = "cm-wrapper";
+      const ta = document.createElement("textarea");
+      editorWrap.appendChild(ta);
+
+      const output = document.createElement("div");
+      output.className = "output";
+      output.textContent = "Outputs appear here.";
+
+      cell.append(header, editorWrap, output);
+      notebookScroll.appendChild(cell);
+
+      const cm = CodeMirror.fromTextArea(ta, {
+        mode: "python",
+        theme: "jupyter",
+        lineNumbers: true,
+        indentUnit: 4,
+        extraKeys: { "Ctrl-Enter": () => runCell(idx - 1), "Cmd-Enter": () => runCell(idx - 1) }
+      });
+      cm.setValue(content);
+
+      notebook.push({ cell, prompt, cm, output });
+      refreshPrompts();
+      return cm;
+    }
+
+    function deleteCell(index) {
+      const item = notebook[index];
+      if (!item) return;
+      item.cell.remove();
+      notebook.splice(index, 1);
+      refreshPrompts();
+    }
+
+    function refreshPrompts() {
+      notebook.forEach((c, i) => { c.prompt.textContent = `In [${i + 1}]:`; });
+    }
+
+    async function runCell(index) {
+      if (!ready) return alert("Kernel is still starting.");
+      const item = notebook[index];
+      if (!item) return;
+      const code = item.cm.getValue();
+      item.output.innerHTML = "";
+      currentOutputEl = item.output;
+      term.writeln("");
+      term.writeln(`\\x1b[38;5;81mIn [${index + 1}]:\\x1b[0m`);
+      try {
+        await pyodide.runPythonAsync(code);
+      } catch (err) {
+        pipeOutput("err", err.toString());
+      } finally {
+        currentOutputEl = null;
+      }
+    }
+
+    async function runAll() {
+      for (let i = 0; i < notebook.length; i++) {
+        await runCell(i);
+      }
+    }
+
+    function loadFile(name) {
+      if (!ready) return;
+      term.writeln(`\\x1b[38;5;220m[open]\\x1b[0m ${name}`);
+      try {
+        const data = pyodide.FS.readFile(name, { encoding: "utf8" });
+        addCell(data);
+      } catch {
+        addCell(files[name] || "");
+      }
+    }
+
+    // Seed with one cell
+    addCell(`# Welcome to The FrontendBack notebook\\nimport sys\\nprint('Python:', sys.version)\\nfrom math import sqrt\\nprint('sqrt(81)=', sqrt(81))`);
+
+    // Gemini chat integration (with notebook context)
+    const keyInput = document.getElementById("gem-key");
+    const modelSelect = document.getElementById("model-select");
+    const chatInput = document.getElementById("chat-input");
+    const chatLog = document.getElementById("ai-chat");
+
+    const storedKey = localStorage.getItem("gemini_api_key");
+    if (storedKey) keyInput.value = storedKey;
+
+    function toggleStoreKey() {
+      if (keyInput.value) {
+        localStorage.setItem("gemini_api_key", keyInput.value);
+        alert("Key saved locally in this browser.");
+      } else {
+        localStorage.removeItem("gemini_api_key");
+        alert("Key cleared.");
+      }
+    }
+
+    function appendMsg(role, text) {
+      const div = document.createElement("div");
+      div.className = `msg ${role}`;
+      div.textContent = text;
+      chatLog.appendChild(div);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    function gatherNotebookContext() {
+      return notebook
+        .map((c, i) => `Cell ${i + 1}:\n${c.cm.getValue()}`)
+        .join("\n\n");
+    }
+
+    async function sendChat() {
+      const apiKey = keyInput.value.trim();
+      if (!apiKey) return alert("Enter your Gemini API key first.");
+      const userText = chatInput.value.trim();
+      if (!userText) return;
+      chatInput.value = "";
+      appendMsg("user", userText);
+
+      const contextText = gatherNotebookContext() || "(no notebook context)";
+      const model = modelSelect.value || "gemini-1.5-flash";
+      const body = {
+        contents: [{
+          parts: [{
+            text: `Notebook context:\n${contextText}\n\nUser message:\n${userText}`
+          }]
+        }]
+      };
+
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        if (!resp.ok) {
+          const t = await resp.text();
+          appendMsg("ai", `Error ${resp.status}: ${t}`);
+          return;
+        }
+        const data = await resp.json();
+        const text = (data?.candidates?.[0]?.content?.parts || []).map((p) => p.text).join("") || "(no text)";
+        appendMsg("ai", text);
+      } catch (err) {
+        appendMsg("ai", err.message || String(err));
+      }
+    }
+  </script>
+</body>
+</html>

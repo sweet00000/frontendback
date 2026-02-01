@@ -3,241 +3,483 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The FrontendBack v0.1</title>
+    <title>The FrontendBack v0.3 (Cloud Edition)</title>
     
     <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/dracula.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/dracula.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1001.0.min.js"></script>
 
     <style>
-        :root {
-            --bg-dark: #1e1e1e;
-            --bg-panel: #252526;
-            --border: #333;
-            --accent: #007acc;
-            --text: #cccccc;
-            --terminal-bg: #1e1e1e;
-        }
+        :root { --bg: #1e1e1e; --panel: #252526; --accent: #007acc; --text: #cccccc; --border: #333; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* Icons */
+        .icon { width: 16px; display: inline-block; text-align: center; margin-right: 5px; }
 
-        body { margin: 0; padding: 0; background: var(--bg-dark); color: var(--text); font-family: 'Segoe UI', monospace; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-
-        /* Header */
-        header { height: 40px; background: #333; display: flex; align-items: center; padding: 0 1rem; justify-content: space-between; border-bottom: 1px solid #000; }
-        .logo { font-weight: bold; color: #fff; letter-spacing: 1px; }
-        .status { font-size: 0.8rem; color: #ffaa00; }
-        .run-btn { background: var(--accent); color: white; border: none; padding: 5px 15px; cursor: pointer; border-radius: 3px; font-weight: bold; }
-        .run-btn:hover { background: #005f9e; }
-
-        /* Main Grid Layout */
-        #workspace { display: grid; grid-template-columns: 200px 1fr 300px; grid-template-rows: 60% 40%; height: calc(100vh - 40px); width: 100vw; }
-
+        /* Layout */
+        header { height: 40px; background: #2d2d2d; display: flex; align-items: center; padding: 0 1rem; justify-content: space-between; border-bottom: 1px solid #000; }
+        #workspace { display: grid; grid-template-columns: 250px 1fr 320px; grid-template-rows: 65% 35%; height: calc(100vh - 40px); }
+        
         /* Panels */
-        .panel { border: 1px solid var(--border); background: var(--bg-panel); display: flex; flex-direction: column; }
-        
-        /* File Explorer (Left) */
+        .panel { border: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; position: relative; }
+        .panel-header { background: #333; padding: 5px 10px; font-size: 0.8rem; font-weight: bold; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+
+        /* Left Sidebar: Files */
         #files-panel { grid-row: 1 / 3; grid-column: 1; border-right: 1px solid var(--border); }
-        .panel-header { padding: 8px; background: #2d2d2d; font-size: 0.85rem; font-weight: bold; text-transform: uppercase; border-bottom: 1px solid var(--border); }
-        .file-list { list-style: none; padding: 10px; margin: 0; font-size: 0.9rem; }
-        .file-item { padding: 4px; cursor: pointer; display: flex; align-items: center; gap: 5px; }
-        .file-item:hover { background: #37373d; }
-        .file-icon { color: #e8c32e; }
+        .file-tree { flex: 1; overflow-y: auto; padding: 5px; font-size: 0.9rem; }
+        .file-node { padding: 4px; cursor: pointer; display: flex; align-items: center; }
+        .file-node:hover { background: #37373d; }
+        .cloud-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid #444; }
+        .cloud-btn { font-size: 0.8rem; background: #333; border: 1px solid #555; color: white; width: 100%; margin-bottom: 5px; cursor: pointer; padding: 4px; text-align: left; }
+        .cloud-btn:hover { background: #444; }
 
-        /* Editor (Center Top) */
-        #editor-panel { grid-row: 1; grid-column: 2; position: relative; }
-        .CodeMirror { height: 100%; font-family: 'Consolas', monospace; font-size: 14px; }
-
-        /* Terminal (Center Bottom) */
-        #terminal-panel { grid-row: 2; grid-column: 2; border-top: 1px solid var(--border); background: var(--terminal-bg); padding: 5px; overflow: hidden; }
+        /* Center: Notebook */
+        #notebook-panel { grid-row: 1; grid-column: 2; overflow-y: auto; padding: 20px; background: #1e1e1e; }
+        .cell { margin-bottom: 15px; border: 1px solid #444; border-radius: 4px; background: #2d2d2d; }
+        .cell-controls { background: #333; padding: 4px; display: flex; justify-content: flex-end; gap: 8px; border-bottom: 1px solid #444; }
+        .cell-output { padding: 10px; font-family: monospace; white-space: pre-wrap; color: #fff; font-size: 0.9rem; border-top: 1px solid #444; }
         
-        /* AI Sidebar (Right) */
+        /* Bottom: Tabs (Terminal / Variables) */
+        #bottom-panel { grid-row: 2; grid-column: 2; border-top: 1px solid var(--border); display: flex; flex-direction: column; background: #1e1e1e; }
+        .tab-bar { display: flex; background: #252526; border-bottom: 1px solid #333; }
+        .tab { padding: 5px 15px; cursor: pointer; font-size: 0.85rem; border-right: 1px solid #333; background: #2d2d2d; color: #888; }
+        .tab.active { background: #1e1e1e; color: white; border-top: 2px solid var(--accent); }
+        .tab-content { flex: 1; position: relative; overflow: hidden; display: none; }
+        .tab-content.active { display: block; }
+
+        /* Variable Viewer Table */
+        #var-table { width: 100%; border-collapse: collapse; font-family: monospace; font-size: 13px; }
+        #var-table th { text-align: left; background: #333; padding: 4px; position: sticky; top: 0; }
+        #var-table td { border-bottom: 1px solid #333; padding: 4px; color: #ce9178; }
+        #var-table tr:hover { background: #2a2d2e; }
+
+        /* Right Sidebar: AI */
         #ai-panel { grid-row: 1 / 3; grid-column: 3; border-left: 1px solid var(--border); display: flex; flex-direction: column; }
-        #ai-chat { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.9rem; }
-        .msg { margin-bottom: 10px; padding: 8px; border-radius: 5px; max-width: 90%; }
-        .msg.ai { background: #3c3c3c; align-self: flex-start; }
-        .msg.user { background: var(--accent); color: white; align-self: flex-end; margin-left: auto; }
-        .ai-input-area { padding: 10px; border-top: 1px solid var(--border); display: flex; gap: 5px; }
-        .ai-input { flex: 1; background: #3c3c3c; border: 1px solid #555; color: white; padding: 5px; border-radius: 3px; }
+        #chat-history { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.9rem; }
+        .msg { margin-bottom: 10px; padding: 8px; border-radius: 6px; max-width: 90%; line-height: 1.4; }
+        .msg.user { background: #0e639c; color: white; align-self: flex-end; margin-left: auto; }
+        .msg.ai { background: #3c3c3c; align-self: flex-start; border-left: 3px solid #ffaa00; }
+        .input-area { padding: 10px; border-top: 1px solid #333; display: flex; gap: 5px; }
+        input[type="text"], input[type="password"] { flex: 1; background: #3c3c3c; border: 1px solid #555; color: white; padding: 6px; border-radius: 3px; outline: none; }
+        
+        /* Modals / Inputs */
+        .hidden-input { display: none; }
+        button.primary { background: var(--accent); color: white; border: none; padding: 4px 12px; border-radius: 3px; cursor: pointer; }
+        button.primary:hover { background: #005f9e; }
 
-        /* Loading Overlay */
-        #loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; flex-direction: column; color: white; }
-        .loader-text { margin-top: 15px; font-family: monospace; }
-        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
+        /* Loader */
+        #loader { position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .loader-bar { width: 200px; height: 4px; background: #333; margin-top: 10px; border-radius: 2px; overflow: hidden; }
+        .loader-fill { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s; }
     </style>
 </head>
 <body>
 
     <div id="loader">
-        <div class="spinner"></div>
-        <div class="loader-text">Booting "The FrontendBack"...</div>
-        <div id="loading-status" style="font-size: 0.8rem; color: #888; margin-top: 5px;">Downloading WASM kernel...</div>
+        <h2>FrontendBack v0.3</h2>
+        <div style="color:#888; font-size:0.9rem" id="load-msg">Booting Python Environment...</div>
+        <div class="loader-bar"><div class="loader-fill" id="load-fill"></div></div>
     </div>
 
     <header>
-        <div class="logo">THE FRONTENDBACK</div>
-        <div class="status" id="kernel-status">Kernel: Initializing...</div>
-        <button class="run-btn" onclick="executeCode()">▶ RUN</button>
+        <div style="font-weight:bold; color: #fff;">THE FRONTENDBACK <span style="font-weight:normal; font-size:0.8rem; color:#888;">| Cloud Edition</span></div>
+        <div style="font-size: 0.8rem; color:#aaa;">RAM Usage: <span id="mem-usage">--</span> MB</div>
     </header>
 
     <div id="workspace">
+        
         <div id="files-panel" class="panel">
-            <div class="panel-header">Explorer</div>
-            <ul class="file-list">
-                <li class="file-item" onclick="loadFile('main.py')"><span class="file-icon">📄</span> main.py</li>
-                <li class="file-item" onclick="loadFile('data.json')"><span class="file-icon">{}</span> data.json</li>
-                <li class="file-item" onclick="loadFile('readme.txt')"><span class="file-icon">📝</span> readme.txt</li>
-            </ul>
+            <div class="panel-header">EXPLORER</div>
+            <div class="file-tree" id="file-list">
+                </div>
+            
+            <div class="cloud-section" style="padding:10px;">
+                <div style="font-size:0.75rem; color:#888; margin-bottom:5px; font-weight:bold;">DATA SOURCES</div>
+                
+                <input type="file" id="local-upload" class="hidden-input" onchange="handleLocalUpload(this)">
+                <button class="cloud-btn" onclick="document.getElementById('local-upload').click()">
+                    📂 Mount Local File
+                </button>
+
+                <button class="cloud-btn" onclick="toggleCloudConfig('s3-config')">☁️ Connect S3 Bucket</button>
+                <div id="s3-config" style="display:none; padding:5px; background:#222; border:1px solid #444; margin-bottom:5px;">
+                    <input type="text" id="s3-bucket" placeholder="Bucket Name" style="width:90%; margin-bottom:3px; font-size:0.8rem;">
+                    <input type="password" id="s3-key" placeholder="Access Key ID" style="width:90%; margin-bottom:3px; font-size:0.8rem;">
+                    <button class="primary" style="width:100%; font-size:0.7rem;" onclick="mountS3()">Mount S3</button>
+                </div>
+
+                <button class="cloud-btn" onclick="alert('IPFS Gateway mounting: Connecting to ipfs.io...')">🌐 Connect IPFS</button>
+            </div>
         </div>
 
-        <div id="editor-panel" class="panel">
-            <textarea id="code-editor">
-# Welcome to The FrontendBack
-import sys
-
-print(f"Backend loaded: {sys.version}")
-
-def calculate_primes(n):
-    primes = []
-    for num in range(2, n + 1):
-        for i in range(2, int(num ** 0.5) + 1):
-            if (num % i) == 0:
-                break
-        else:
-            primes.append(num)
-    return primes
-
-print(f"Found primes: {calculate_primes(50)}")
-</textarea>
+        <div id="notebook-panel">
+            <div style="text-align:center; margin-bottom:20px; border:1px dashed #444; padding:10px; color:#666;">
+                <button class="primary" onclick="createCell()">+ New Code Cell</button>
+            </div>
         </div>
 
-        <div id="terminal-panel" class="panel"></div>
+        <div id="bottom-panel">
+            <div class="tab-bar">
+                <div class="tab active" onclick="switchTab('terminal')">Terminal (>_)</div>
+                <div class="tab" onclick="switchTab('vars')">Variable Viewer ({x})</div>
+            </div>
+            
+            <div id="tab-terminal" class="tab-content active" style="background: black; height:100%;">
+                <div id="terminal-container" style="height:100%;"></div>
+            </div>
+            
+            <div id="tab-vars" class="tab-content" style="overflow-y:auto; background: #1e1e1e;">
+                <table id="var-table">
+                    <thead>
+                        <tr><th>Name</th><th>Type</th><th>Value / Preview</th></tr>
+                    </thead>
+                    <tbody id="var-body">
+                        </tbody>
+                </table>
+            </div>
+        </div>
 
         <div id="ai-panel" class="panel">
-            <div class="panel-header">AI Assistant</div>
-            <div id="ai-chat">
-                <div class="msg ai">Hello! I'm your local AI dev partner. How can I help with your code?</div>
+            <div class="panel-header">GEMINI ASSISTANT (2.0 Flash)</div>
+            <div id="chat-history">
+                <div class="msg ai">Hello! I am connected to the Gemini 2.0 Flash API. <br><br><b>Note:</b> Please verify your API Key in the code source before asking questions.</div>
             </div>
-            <div class="ai-input-area">
-                <input type="text" class="ai-input" placeholder="Ask AI..." id="ai-prompt" onkeypress="handleAiEnter(event)">
-                <button class="run-btn" onclick="sendAi()">Send</button>
+            <div class="input-area">
+                <input type="text" id="ai-input" placeholder="Ask Gemini..." onkeypress="if(event.key==='Enter') sendGemini()">
+                <button class="primary" onclick="sendGemini()">➤</button>
             </div>
         </div>
     </div>
 
     <script>
-        // --- 1. SETUP TERMINAL ---
-        const term = new Terminal({
-            theme: { background: '#1e1e1e', foreground: '#cccccc' },
-            cursorBlink: true,
-            fontSize: 14,
-            fontFamily: 'monospace'
-        });
-        const fitAddon = new FitAddon.FitAddon();
-        term.loadAddon(fitAddon);
-        term.open(document.getElementById('terminal-panel'));
-        fitAddon.fit();
+        // --- CONFIGURATION ---
+        // ⚠️ PASTE YOUR KEY HERE ⚠️
+        const GEMINI_API_KEY = "PASTE_YOUR_KEY_HERE"; 
         
-        window.addEventListener('resize', () => fitAddon.fit());
-        term.write('\x1b[32mWelcome to The FrontendBack Terminal\x1b[0m\r\n');
-
-        // --- 2. SETUP EDITOR ---
-        const editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
-            mode: "python",
-            theme: "dracula",
-            lineNumbers: true,
-            autoCloseBrackets: true
-        });
-
-        // --- 3. BACKEND (WASM) LOGIC ---
+        // --- GLOBALS ---
         let pyodide = null;
-        let pyodideReady = false;
+        let micropip = null;
+        const cells = {};
+        let term, fitAddon;
 
-        async function main() {
+        // --- 1. INITIALIZATION ---
+        async function boot() {
+            const loaderFill = document.getElementById('load-fill');
+            const loadMsg = document.getElementById('load-msg');
+
             try {
-                // NOTE: To use XEUS instead of Pyodide:
-                // 1. You would use the 'jupyter-lite' build process.
-                // 2. You would initialize the Xeus Kernel Worker here instead of loadPyodide.
+                // Load Pyodide
+                loadMsg.innerText = "Downloading Pyodide...";
+                pyodide = await loadPyodide();
+                loaderFill.style.width = "50%";
+
+                // Load Micropip
+                loadMsg.innerText = "Loading Package Manager...";
+                await pyodide.loadPackage("micropip");
+                micropip = pyodide.pyimport("micropip");
+                loaderFill.style.width = "80%";
+
+                // Setup default env
+                await pyodide.runPythonAsync(`
+                    import sys
+                    import os
+                    os.makedirs('/mnt/s3', exist_ok=True)
+                    os.makedirs('/mnt/local', exist_ok=True)
+                `);
+
+                loaderFill.style.width = "100%";
+                setTimeout(() => document.getElementById('loader').style.display = 'none', 500);
+
+                // Initialize Terminal
+                initTerminal();
                 
-                term.write('Loading Python WASM Runtime...\r\n');
-                pyodide = await loadPyodide({
-                    stdout: (text) => term.write(text + "\r\n"),
-                    stderr: (text) => term.write(`\x1b[31m${text}\x1b[0m\r\n`)
+                // Refresh File List
+                refreshFileList();
+
+                // Create starter cell
+                createCell("# Welcome to FrontendBack v0.3\nimport sys\nprint(sys.version)\n\n# Define a variable to test the viewer:\nmy_data = {'id': 1, 'name': 'FrontendBack'}\nvalues = [10, 20, 30, 40]");
+
+            } catch (err) {
+                loadMsg.innerText = "Error: " + err;
+                loadMsg.style.color = "red";
+            }
+        }
+        boot();
+
+        // --- 2. TERMINAL LOGIC ---
+        function initTerminal() {
+            term = new Terminal({ theme: { background: '#000000' }, fontSize: 13, cursorBlink: true });
+            fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            term.open(document.getElementById('terminal-container'));
+            fitAddon.fit();
+            
+            term.write('\x1b[32mFrontendBack Shell initialized.\x1b[0m\r\n');
+            term.write('Type python commands or "pip install ..."\r\n$ ');
+
+            let cmd = '';
+            term.onData(e => {
+                if(e === '\r') {
+                    term.write('\r\n');
+                    handleTermCommand(cmd);
+                    cmd = '';
+                } else if (e === '\x7F') {
+                    if (cmd.length > 0) {
+                        term.write('\b \b');
+                        cmd = cmd.slice(0, -1);
+                    }
+                } else {
+                    cmd += e;
+                    term.write(e);
+                }
+            });
+            
+            window.addEventListener('resize', () => fitAddon.fit());
+        }
+
+        async function handleTermCommand(cmd) {
+            cmd = cmd.trim();
+            if(!cmd) { term.write('$ '); return; }
+
+            if(cmd.startsWith("pip install ")) {
+                const pkg = cmd.replace("pip install ", "");
+                term.write(`\x1b[33mInstalling ${pkg}...\x1b[0m\r\n`);
+                try {
+                    await micropip.install(pkg);
+                    term.write(`Success.\r\n$ `);
+                } catch(e) { term.write(`Error: ${e}\r\n$ `); }
+            } else {
+                try {
+                    // Redirect stdout specifically for terminal commands
+                    pyodide.setStdout({ batched: (t) => term.write(t + '\r\n') });
+                    await pyodide.runPythonAsync(cmd);
+                    term.write('$ ');
+                } catch(e) {
+                    term.write(`\x1b[31m${e}\x1b[0m\r\n$ `);
+                }
+            }
+            // Always refresh vars after a shell command
+            updateVariableViewer();
+        }
+
+        // --- 3. NOTEBOOK LOGIC ---
+        function createCell(content = "") {
+            const container = document.getElementById('notebook-panel');
+            const id = 'cell-' + Date.now();
+            
+            const div = document.createElement('div');
+            div.className = 'cell';
+            div.innerHTML = `
+                <div class="cell-controls">
+                    <button class="primary" style="font-size:0.7rem; background:#444;" onclick="this.parentElement.parentElement.remove()">Del</button>
+                    <button class="primary" onclick="runCell('${id}')">▶ Run</button>
+                </div>
+                <textarea id="${id}-area">${content}</textarea>
+                <div id="${id}-out" class="cell-output"></div>
+            `;
+            
+            // Insert before the add button div
+            container.insertBefore(div, container.lastElementChild);
+            
+            const cm = CodeMirror.fromTextArea(document.getElementById(`${id}-area`), {
+                mode: "python", theme: "dracula", lineNumbers: true, viewportMargin: Infinity
+            });
+            cells[id] = { cm, out: `${id}-out` };
+        }
+
+        async function runCell(id) {
+            const cell = cells[id];
+            const code = cell.cm.getValue();
+            const outDiv = document.getElementById(cell.out);
+            
+            outDiv.innerText = "Running...";
+            const logs = [];
+            
+            // Capture output
+            pyodide.setStdout({ batched: (t) => logs.push(t) });
+            pyodide.setStderr({ batched: (t) => logs.push(`[err] ${t}`) });
+
+            try {
+                let res = await pyodide.runPythonAsync(code);
+                let text = logs.join('\n');
+                if(res !== undefined) text += `\n[Out]: ${res}`;
+                outDiv.innerText = text || "(No output)";
+                outDiv.style.color = "#ccc";
+            } catch (e) {
+                outDiv.innerText = e;
+                outDiv.style.color = "#ff5555";
+            }
+            
+            updateVariableViewer();
+            refreshFileList(); // In case they wrote a file
+        }
+
+        // --- 4. VARIABLE VIEWER ---
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            if(tab === 'terminal') {
+                document.querySelector('.tab:nth-child(1)').classList.add('active');
+                document.getElementById('tab-terminal').classList.add('active');
+                fitAddon.fit();
+            } else {
+                document.querySelector('.tab:nth-child(2)').classList.add('active');
+                document.getElementById('tab-vars').classList.add('active');
+                updateVariableViewer();
+            }
+        }
+
+        function updateVariableViewer() {
+            if(!pyodide) return;
+            const tbody = document.getElementById('var-body');
+            tbody.innerHTML = "";
+            
+            // Python script to inspect globals and return JSON
+            // We skip builtins and imports to keep it clean
+            const inspector = `
+import json
+import types
+
+safe_vars = []
+ignore = ['In', 'Out', 'exit', 'quit', 'open', 'get_ipython']
+
+for name, val in globals().items():
+    if name.startswith('_') or name in ignore: continue
+    if isinstance(val, (types.ModuleType, types.FunctionType, type)): continue
+    
+    try:
+        t = type(val).__name__
+        v = str(val)
+        if len(v) > 50: v = v[:50] + "..."
+        safe_vars.append({"name": name, "type": t, "val": v})
+    except:
+        pass
+
+json.dumps(safe_vars)
+            `;
+            
+            try {
+                const jsonStr = pyodide.runPython(inspector);
+                const data = JSON.parse(jsonStr);
+                
+                data.forEach(item => {
+                    const row = `<tr><td><b>${item.name}</b></td><td><span style="color:#4ec9b0">${item.type}</span></td><td>${item.val}</td></tr>`;
+                    tbody.innerHTML += row;
                 });
-                
-                // Mount a virtual file system
-                pyodide.FS.writeFile("main.py", editor.getValue());
-                pyodide.FS.writeFile("readme.txt", "This is a virtual filesystem in your browser!");
-                
-                document.getElementById("loader").style.display = "none";
-                document.getElementById("kernel-status").innerText = "Kernel: Ready (WASM)";
-                document.getElementById("kernel-status").style.color = "#00ff00";
-                term.write('\x1b[32m>>> Python 3.11 Ready.\x1b[0m\r\n');
-                pyodideReady = true;
-            } catch (err) {
-                document.getElementById("loader").innerHTML = `<div style="color:red">Error loading WASM:<br>${err}</div>`;
-            }
-        }
-        main();
-
-        // --- 4. EXECUTION LOGIC ---
-        async function executeCode() {
-            if (!pyodideReady) return alert("Kernel is booting...");
-            
-            const code = editor.getValue();
-            term.write('\r\n\x1b[34m$ python main.py\x1b[0m\r\n');
-            
-            try {
-                // In a real Xeus environment, this would be sent via ZeroMQ/WebSocket
-                // Here we run it directly in the WASM main thread
-                await pyodide.runPythonAsync(code);
-            } catch (err) {
-                term.write(`\x1b[31m${err}\x1b[0m\r\n`);
+            } catch(e) {
+                console.error("Var inspector error", e);
             }
         }
 
-        // --- 5. UI HELPERS ---
-        function loadFile(filename) {
-            // Mock file loading
-            if(filename === 'main.py') return; // already there
-            term.write(`\r\n\x1b[33m[System] Opening ${filename}...\x1b[0m\r\n`);
-            // In a real app, you would read from pyodide.FS.readFile(filename)
+        // --- 5. CLOUD & FILES ---
+        function refreshFileList() {
+            // Simple listing of current directory
+            if(!pyodide) return;
+            const files = pyodide.FS.readdir('.');
+            const list = document.getElementById('file-list');
+            list.innerHTML = "";
+            
+            files.forEach(f => {
+                if(f === "." || f === "..") return;
+                list.innerHTML += `<div class="file-node"><span class="icon">📄</span> ${f}</div>`;
+            });
+            
+            // Check Mounts
+            if(pyodide.FS.analyzePath('/mnt/local').exists) {
+                 list.innerHTML += `<div class="file-node" style="color:#4ec9b0"><span class="icon">📂</span> /mnt/local (Active)</div>`;
+            }
         }
 
-        // --- 6. AI SIDEBAR MOCK ---
-        function handleAiEnter(e) {
-            if (e.key === 'Enter') sendAi();
+        async function handleLocalUpload(input) {
+            const file = input.files[0];
+            if(!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                pyodide.FS.writeFile(file.name, data);
+                term.write(`\r\n[System] Uploaded ${file.name}\r\n$ `);
+                refreshFileList();
+            };
+            reader.readAsArrayBuffer(file);
         }
 
-        function sendAi() {
-            const input = document.getElementById("ai-prompt");
-            const chat = document.getElementById("ai-chat");
-            const text = input.value;
-            if (!text) return;
+        function toggleCloudConfig(id) {
+            const el = document.getElementById(id);
+            el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
 
-            // User Message
-            chat.innerHTML += `<div class="msg user">${text}</div>`;
-            input.value = "";
+        function mountS3() {
+            const bucket = document.getElementById('s3-bucket').value;
+            // In a real app, we would use AWS SDK here to list objects
+            // and then create a "lazy loading" FUSE-like system via pyodide.
+            // For this MVP, we just confirm config storage.
+            alert(`S3 Config Stored for bucket: ${bucket}.\n\n(Note: To read S3 in WASM, you usually presign URLs in JS and pass them to Python, or use 'boto3-lite' if available via micropip.)`);
+        }
+
+        // --- 6. GEMINI API CHAT ---
+        async function sendGemini() {
+            const input = document.getElementById('ai-input');
+            const chat = document.getElementById('chat-history');
+            const prompt = input.value.trim();
+            if(!prompt) return;
+
+            // 1. User UI
+            chat.innerHTML += `<div class="msg user">${prompt}</div>`;
+            input.value = "Thinking...";
+            input.disabled = true;
             chat.scrollTop = chat.scrollHeight;
 
-            // Mock AI Response (In reality, fetch from an LLM API here)
-            setTimeout(() => {
-                const responses = [
-                    "That looks like a loop logic error. Check your indentation.",
-                    "Would you like me to refactor that function for performance?",
-                    "I can create a unit test for this if you want.",
-                    "Remember, since this is WASM, network requests need to use pyodide.http."
-                ];
-                const reply = responses[Math.floor(Math.random() * responses.length)];
-                chat.innerHTML += `<div class="msg ai">${reply}</div>`;
-                chat.scrollTop = chat.scrollHeight;
-            }, 1000);
+            try {
+                if(GEMINI_API_KEY.includes("PASTE")) {
+                    throw new Error("Please update GEMINI_API_KEY in source code.");
+                }
+
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+                
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }]
+                    })
+                });
+
+                const data = await response.json();
+                
+                if(data.error) throw new Error(data.error.message);
+
+                const reply = data.candidates[0].content.parts[0].text;
+                
+                // 2. AI UI
+                chat.innerHTML += `<div class="msg ai">${markedParse(reply)}</div>`;
+
+            } catch(e) {
+                chat.innerHTML += `<div class="msg ai" style="color:red">Error: ${e.message}</div>`;
+            }
+
+            input.value = "";
+            input.disabled = false;
+            input.focus();
+            chat.scrollTop = chat.scrollHeight;
         }
+
+        // Very simple markdown parser for bolding/code in chat
+        function markedParse(text) {
+            // Bold
+            text = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+            // Code blocks
+            text = text.replace(/```([\s\S]*?)```/g, '<pre style="background:#222; padding:5px; border-radius:4px;">$1</pre>');
+            return text;
+        }
+
     </script>
 </body>
 </html>

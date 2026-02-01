@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The FrontendBack v0.1</title>
+    
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+    <style>
+        :root {
+            --bg-dark: #1e1e1e;
+            --bg-panel: #252526;
+            --border: #333;
+            --accent: #007acc;
+            --text: #cccccc;
+            --terminal-bg: #1e1e1e;
+        }
+
+        body { margin: 0; padding: 0; background: var(--bg-dark); color: var(--text); font-family: 'Segoe UI', monospace; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* Header */
+        header { height: 40px; background: #333; display: flex; align-items: center; padding: 0 1rem; justify-content: space-between; border-bottom: 1px solid #000; }
+        .logo { font-weight: bold; color: #fff; letter-spacing: 1px; }
+        .status { font-size: 0.8rem; color: #ffaa00; }
+        .run-btn { background: var(--accent); color: white; border: none; padding: 5px 15px; cursor: pointer; border-radius: 3px; font-weight: bold; }
+        .run-btn:hover { background: #005f9e; }
+
+        /* Main Grid Layout */
+        #workspace { display: grid; grid-template-columns: 200px 1fr 300px; grid-template-rows: 60% 40%; height: calc(100vh - 40px); width: 100vw; }
+
+        /* Panels */
+        .panel { border: 1px solid var(--border); background: var(--bg-panel); display: flex; flex-direction: column; }
+        
+        /* File Explorer (Left) */
+        #files-panel { grid-row: 1 / 3; grid-column: 1; border-right: 1px solid var(--border); }
+        .panel-header { padding: 8px; background: #2d2d2d; font-size: 0.85rem; font-weight: bold; text-transform: uppercase; border-bottom: 1px solid var(--border); }
+        .file-list { list-style: none; padding: 10px; margin: 0; font-size: 0.9rem; }
+        .file-item { padding: 4px; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+        .file-item:hover { background: #37373d; }
+        .file-icon { color: #e8c32e; }
+
+        /* Editor (Center Top) */
+        #editor-panel { grid-row: 1; grid-column: 2; position: relative; }
+        .CodeMirror { height: 100%; font-family: 'Consolas', monospace; font-size: 14px; }
+
+        /* Terminal (Center Bottom) */
+        #terminal-panel { grid-row: 2; grid-column: 2; border-top: 1px solid var(--border); background: var(--terminal-bg); padding: 5px; overflow: hidden; }
+        
+        /* AI Sidebar (Right) */
+        #ai-panel { grid-row: 1 / 3; grid-column: 3; border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+        #ai-chat { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.9rem; }
+        .msg { margin-bottom: 10px; padding: 8px; border-radius: 5px; max-width: 90%; }
+        .msg.ai { background: #3c3c3c; align-self: flex-start; }
+        .msg.user { background: var(--accent); color: white; align-self: flex-end; margin-left: auto; }
+        .ai-input-area { padding: 10px; border-top: 1px solid var(--border); display: flex; gap: 5px; }
+        .ai-input { flex: 1; background: #3c3c3c; border: 1px solid #555; color: white; padding: 5px; border-radius: 3px; }
+
+        /* Loading Overlay */
+        #loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; flex-direction: column; color: white; }
+        .loader-text { margin-top: 15px; font-family: monospace; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    </style>
+</head>
+<body>
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <div class="loader-text">Booting "The FrontendBack"...</div>
+        <div id="loading-status" style="font-size: 0.8rem; color: #888; margin-top: 5px;">Downloading WASM kernel...</div>
+    </div>
+
+    <header>
+        <div class="logo">THE FRONTENDBACK</div>
+        <div class="status" id="kernel-status">Kernel: Initializing...</div>
+        <button class="run-btn" onclick="executeCode()">▶ RUN</button>
+    </header>
+
+    <div id="workspace">
+        <div id="files-panel" class="panel">
+            <div class="panel-header">Explorer</div>
+            <ul class="file-list">
+                <li class="file-item" onclick="loadFile('main.py')"><span class="file-icon">📄</span> main.py</li>
+                <li class="file-item" onclick="loadFile('data.json')"><span class="file-icon">{}</span> data.json</li>
+                <li class="file-item" onclick="loadFile('readme.txt')"><span class="file-icon">📝</span> readme.txt</li>
+            </ul>
+        </div>
+
+        <div id="editor-panel" class="panel">
+            <textarea id="code-editor">
+# Welcome to The FrontendBack
+import sys
+
+print(f"Backend loaded: {sys.version}")
+
+def calculate_primes(n):
+    primes = []
+    for num in range(2, n + 1):
+        for i in range(2, int(num ** 0.5) + 1):
+            if (num % i) == 0:
+                break
+        else:
+            primes.append(num)
+    return primes
+
+print(f"Found primes: {calculate_primes(50)}")
+</textarea>
+        </div>
+
+        <div id="terminal-panel" class="panel"></div>
+
+        <div id="ai-panel" class="panel">
+            <div class="panel-header">AI Assistant</div>
+            <div id="ai-chat">
+                <div class="msg ai">Hello! I'm your local AI dev partner. How can I help with your code?</div>
+            </div>
+            <div class="ai-input-area">
+                <input type="text" class="ai-input" placeholder="Ask AI..." id="ai-prompt" onkeypress="handleAiEnter(event)">
+                <button class="run-btn" onclick="sendAi()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. SETUP TERMINAL ---
+        const term = new Terminal({
+            theme: { background: '#1e1e1e', foreground: '#cccccc' },
+            cursorBlink: true,
+            fontSize: 14,
+            fontFamily: 'monospace'
+        });
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        term.open(document.getElementById('terminal-panel'));
+        fitAddon.fit();
+        
+        window.addEventListener('resize', () => fitAddon.fit());
+        term.write('\x1b[32mWelcome to The FrontendBack Terminal\x1b[0m\r\n');
+
+        // --- 2. SETUP EDITOR ---
+        const editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
+            mode: "python",
+            theme: "dracula",
+            lineNumbers: true,
+            autoCloseBrackets: true
+        });
+
+        // --- 3. BACKEND (WASM) LOGIC ---
+        let pyodide = null;
+        let pyodideReady = false;
+
+        async function main() {
+            try {
+                // NOTE: To use XEUS instead of Pyodide:
+                // 1. You would use the 'jupyter-lite' build process.
+                // 2. You would initialize the Xeus Kernel Worker here instead of loadPyodide.
+                
+                term.write('Loading Python WASM Runtime...\r\n');
+                pyodide = await loadPyodide({
+                    stdout: (text) => term.write(text + "\r\n"),
+                    stderr: (text) => term.write(`\x1b[31m${text}\x1b[0m\r\n`)
+                });
+                
+                // Mount a virtual file system
+                pyodide.FS.writeFile("main.py", editor.getValue());
+                pyodide.FS.writeFile("readme.txt", "This is a virtual filesystem in your browser!");
+                
+                document.getElementById("loader").style.display = "none";
+                document.getElementById("kernel-status").innerText = "Kernel: Ready (WASM)";
+                document.getElementById("kernel-status").style.color = "#00ff00";
+                term.write('\x1b[32m>>> Python 3.11 Ready.\x1b[0m\r\n');
+                pyodideReady = true;
+            } catch (err) {
+                document.getElementById("loader").innerHTML = `<div style="color:red">Error loading WASM:<br>${err}</div>`;
+            }
+        }
+        main();
+
+        // --- 4. EXECUTION LOGIC ---
+        async function executeCode() {
+            if (!pyodideReady) return alert("Kernel is booting...");
+            
+            const code = editor.getValue();
+            term.write('\r\n\x1b[34m$ python main.py\x1b[0m\r\n');
+            
+            try {
+                // In a real Xeus environment, this would be sent via ZeroMQ/WebSocket
+                // Here we run it directly in the WASM main thread
+                await pyodide.runPythonAsync(code);
+            } catch (err) {
+                term.write(`\x1b[31m${err}\x1b[0m\r\n`);
+            }
+        }
+
+        // --- 5. UI HELPERS ---
+        function loadFile(filename) {
+            // Mock file loading
+            if(filename === 'main.py') return; // already there
+            term.write(`\r\n\x1b[33m[System] Opening ${filename}...\x1b[0m\r\n`);
+            // In a real app, you would read from pyodide.FS.readFile(filename)
+        }
+
+        // --- 6. AI SIDEBAR MOCK ---
+        function handleAiEnter(e) {
+            if (e.key === 'Enter') sendAi();
+        }
+
+        function sendAi() {
+            const input = document.getElementById("ai-prompt");
+            const chat = document.getElementById("ai-chat");
+            const text = input.value;
+            if (!text) return;
+
+            // User Message
+            chat.innerHTML += `<div class="msg user">${text}</div>`;
+            input.value = "";
+            chat.scrollTop = chat.scrollHeight;
+
+            // Mock AI Response (In reality, fetch from an LLM API here)
+            setTimeout(() => {
+                const responses = [
+                    "That looks like a loop logic error. Check your indentation.",
+                    "Would you like me to refactor that function for performance?",
+                    "I can create a unit test for this if you want.",
+                    "Remember, since this is WASM, network requests need to use pyodide.http."
+                ];
+                const reply = responses[Math.floor(Math.random() * responses.length)];
+                chat.innerHTML += `<div class="msg ai">${reply}</div>`;
+                chat.scrollTop = chat.scrollHeight;
+            }, 1000);
+        }
+    </script>
+</body>
+</html>

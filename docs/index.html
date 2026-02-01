@@ -1,0 +1,187 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>JupyterLite Host</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    .layout { height: 100%; display: grid; grid-template-columns: var(--side-width, 380px) 6px 1fr; }
+    .sidebar { border-right: 1px solid #ddd; padding: 12px; font-family: system-ui, sans-serif; overflow-y: auto; }
+    .splitter { cursor: col-resize; background: #e0e0e0; border-right: 1px solid #c7c7c7; }
+    .main { height: 100%; }
+    iframe { width: 100%; height: 100%; border: 0; }
+    button { width: 100%; padding: 10px; margin: 6px 0; cursor: pointer; }
+    h3 { margin-top: 0; }
+    .note { font-size: 12px; opacity: .7; }
+    .chat button { width: 100%; padding: 8px; margin: 4px 0; }
+    .chat textarea { box-sizing: border-box; width: 100%; }
+    .chat input { box-sizing: border-box; width: 100%; padding: 6px; }
+    .chat-log { margin-top: 8px; padding: 8px; height: 180px; overflow-y: auto; background:#f7f7f7; border:1px solid #ddd; font-family:monospace; font-size:12px; white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <div class="sidebar">
+      <h3>Notebook Controls</h3>
+      <button onclick="openNotebook('notebooks/mvp.ipynb')">Open mvp.ipynb</button>
+      <button onclick="runAll()">Run All Cells (active notebook)</button>
+      <button onclick="resetLab()">Reset to Lab Home</button>
+      <p class="note">Buttons talk to the JupyterLite iframe via postMessage.</p>
+
+      <div class="chat">
+        <h4>AI Chat (Gemini)</h4>
+        <label style="display:block;font-size:12px;margin:4px 0;">API Key
+          <input id="gem-key" type="password" placeholder="GEMINI_API_KEY">
+        </label>
+        <label style="display:block;font-size:12px;margin:4px 0;">Model
+          <select id="model-select">
+            <option value="gemini-1.5-flash">gemini-1.5-flash (widest free availability)</option>
+            <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+            <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+          </select>
+        </label>
+        <textarea id="chat-input" rows="4" placeholder="Ask me anything..."></textarea>
+        <button onclick="sendChat()">Send</button>
+      <button onclick="toggleStoreKey()">Save/Forget Key</button>
+      <div id="chat-log" class="chat-log"></div>
+    </div>
+  </div>
+    <div class="splitter" id="splitter" aria-label="Resize sidebar" title="Drag to resize"></div>
+    <div class="main">
+      <iframe id="jlite" src="./lite/lab/index.html?path=notebooks/mvp.ipynb"></iframe>
+    </div>
+  </div>
+  <script>
+    // --- resizable sidebar ---
+    const root = document.documentElement;
+    const splitter = document.getElementById('splitter');
+    const minW = 200;
+    const maxW = 700;
+    const saved = localStorage.getItem('sidebar_width');
+    if (saved) root.style.setProperty('--side-width', `${saved}px`);
+
+    let dragging = false;
+    splitter.addEventListener('mousedown', (e) => { dragging = true; e.preventDefault(); });
+    window.addEventListener('mouseup', () => { dragging = false; });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const rect = document.body.getBoundingClientRect();
+      const w = Math.min(maxW, Math.max(minW, e.clientX - rect.left));
+      root.style.setProperty('--side-width', `${w}px`);
+      localStorage.setItem('sidebar_width', w);
+    });
+
+    const frame = document.getElementById('jlite');
+    const targetOrigin = '*'; // same-origin here; adjust if hosting separately.
+
+    function postCmd(cmd){
+      frame.contentWindow.postMessage(cmd, targetOrigin);
+    }
+    function openNotebook(path){
+      // ensure Lab app is loaded, then ask it to open the notebook
+      postCmd({action:'open', path});
+    }
+    function runAll(){
+      postCmd({action:'run-all'});
+    }
+    function resetLab(){
+      frame.src = './lite/lab/index.html';
+    }
+
+    // --- AI Chat with notebook context ---
+    const keyInput = document.getElementById("gem-key");
+    const modelSelect = document.getElementById("model-select");
+    const chatInput = document.getElementById("chat-input");
+    const chatLog = document.getElementById("chat-log");
+
+    // Restore stored key
+    const storedKey = localStorage.getItem("gemini_api_key");
+    if (storedKey) keyInput.value = storedKey;
+
+    function formatText(text) {
+      // Add spacing around code fences to make them more readable in pre-wrap.
+      return text
+        .replace(/```/g, '\n```\n')
+        .replace(/\n{3,}/g, '\n\n'); // collapse overly long blank runs
+    }
+
+    function logMsg(role, text) {
+      const div = document.createElement("div");
+      div.textContent = `${role}: ${formatText(text)}`;
+      chatLog.appendChild(div);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    function toggleStoreKey() {
+      if (keyInput.value) {
+        localStorage.setItem("gemini_api_key", keyInput.value);
+        alert("Key saved locally in this browser.");
+      } else {
+        localStorage.removeItem("gemini_api_key");
+        alert("Key cleared.");
+      }
+    }
+
+    function requestNotebookContext(timeoutMs = 2000) {
+      return new Promise((resolve) => {
+        const reqId = "ctx-" + Math.random().toString(36).slice(2);
+        const handler = (evt) => {
+          const d = evt.data || {};
+          if (d.action === "notebook-context" && d.reqId === reqId) {
+            window.removeEventListener("message", handler);
+            resolve(d);
+          }
+        };
+        window.addEventListener("message", handler);
+        postCmd({ action: "get-notebook", reqId });
+        setTimeout(() => {
+          window.removeEventListener("message", handler);
+          resolve({ error: "timeout" });
+        }, timeoutMs);
+      });
+    }
+
+    async function sendChat() {
+      const apiKey = keyInput.value.trim();
+      if (!apiKey) return alert("Enter your Gemini API key first.");
+      const userText = chatInput.value.trim();
+      if (!userText) return;
+      chatInput.value = "";
+      logMsg("You", userText);
+
+      const ctx = await requestNotebookContext();
+      const contextText = ctx.text || "(no notebook context)";
+      const contextPath = ctx.path || "(unknown path)";
+
+      const model = modelSelect.value || "gemini-1.5-flash";
+      const body = {
+        contents: [{
+          parts: [{
+            text: `Context from current notebook (${contextPath}):\n${contextText}\n\nUser message:\n${userText}`
+          }]
+        }]
+      };
+
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        if (!resp.ok) {
+          const t = await resp.text();
+          logMsg("Error", `HTTP ${resp.status} - ${t}`);
+          return;
+        }
+        const data = await resp.json();
+        const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text).join("") || "(no text)";
+        logMsg("AI", text);
+      } catch (err) {
+        logMsg("Error", err.message || String(err));
+      }
+    }
+  </script>
+</body>
+</html>

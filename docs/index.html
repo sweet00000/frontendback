@@ -24,7 +24,7 @@
   <div class="layout">
     <div class="sidebar">
       <h3>Notebook Controls</h3>
-      <button onclick="openNotebook('notebooks/MVP.ipynb')">Open mvp.ipynb</button>
+      <button onclick="openNotebook('notebooks/mvp.ipynb')">Open mvp.ipynb</button>
       <button onclick="runAll()">Run All Cells (active notebook)</button>
       <button onclick="resetLab()">Reset to Lab Home</button>
       <p class="note">Buttons talk to the JupyterLite iframe via postMessage.</p>
@@ -49,7 +49,7 @@
   </div>
     <div class="splitter" id="splitter" aria-label="Resize sidebar" title="Drag to resize"></div>
     <div class="main">
-      <iframe id="jlite" src="./lite/lab/index.html?path=notebooks/MVP.ipynb"></iframe>
+      <iframe id="jlite" src="./lite/lab/index.html?path=notebooks/mvp.ipynb"></iframe>
     </div>
   </div>
   <script>
